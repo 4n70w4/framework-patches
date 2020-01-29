@@ -1,0 +1,126 @@
+@package laravel/framework
+
+--- a/src/Illuminate/Support/Traits/Macroable.php
++++ b/src/Illuminate/Support/Traits/Macroable.php
+@@ -74,6 +74,10 @@ trait Macroable
+     public static function __callStatic($method, $parameters)
+     {
+         if (! static::hasMacro($method)) {
++            if (method_exists(get_parent_class(self::class), '__callStatic')) {
++                return parent::__callStatic($method, $parameters);
++            }
++
+             throw new BadMethodCallException(sprintf(
+                 'Method %s::%s does not exist.', static::class, $method
+             ));
+@@ -100,6 +104,10 @@ trait Macroable
+     public function __call($method, $parameters)
+     {
+         if (! static::hasMacro($method)) {
++            if (method_exists(get_parent_class($this), '__call')) {
++                return parent::__call($method, $parameters);
++            }
++
+             throw new BadMethodCallException(sprintf(
+                 'Method %s::%s does not exist.', static::class, $method
+             ));
+
+--- a/tests/Support/SupportMacroableTest.php
++++ b/tests/Support/SupportMacroableTest.php
+@@ -73,6 +73,21 @@ class SupportMacroableTest extends TestCase
+         TestMacroable::mixin(new TestMixin);
+         $this->assertSame('foo', $instance->methodThree());
+     }
++
++    public function testMacroableExtendsWithCall()
++    {
++        TestMacroableExtendsWithCall::macro('something', function () {
++            return 'something';
++        });
++
++        $instance = new TestMacroableExtendsWithCall;
++        $this->assertSame('something', $instance->something());
++        $this->assertSame('parent __call', $instance->another());
++
++        $this->assertSame('something', TestMacroableExtendsWithCall::something());
++        $this->assertSame('parent __call', TestMacroableExtendsWithCall::another());
++    }
++
+ }
+
+ class EmptyMacroable
+@@ -92,6 +107,24 @@ class TestMacroable
+     }
+ }
+
++class BaseWithCall
++{
++    public function __call($name, $arguments)
++    {
++        return 'parent __call';
++    }
++
++    public static function __callStatic($name, $arguments)
++    {
++        return 'parent __call';
++    }
++}
++
++class TestMacroableExtendsWithCall extends BaseWithCall
++{
++    use Macroable;
++}
++
+ class TestMixin
+ {
+     public function methodOne()
+
+
+--- a/tests/Support/SupportMacroableTest.php
++++ b/tests/Support/SupportMacroableTest.php
+@@ -88,6 +88,29 @@ class SupportMacroableTest extends TestCase
+         $this->assertSame('parent __call', TestMacroableExtendsWithCall::another());
+     }
+
++    public function testExceptions()
++    {
++        $this->expectException(\BadMethodCallException::class);
++        $instance = new TestMacroable;
++        $instance->something();
++    }
++
++    public function testExceptionsStatic()
++    {
++        $this->expectException(\BadMethodCallException::class);
++
++        TestMacroable::another();
++    }
++
++    public function testInvoke()
++    {
++        TestMacroable::macro('test', new TestInvocable);
++
++        $instance = new TestMacroable;
++        $this->assertSame('invoked', $instance->test());
++
++        $this->assertSame('invoked', TestMacroable::test());
++    }
+ }
+
+ class EmptyMacroable
+@@ -125,6 +148,14 @@ class TestMacroableExtendsWithCall extends BaseWithCall
+     use Macroable;
+ }
+
++class TestInvocable
++{
++    public function __invoke()
++    {
++        return 'invoked';
++    }
++}
++
+ class TestMixin
+ {
+     public function methodOne()
+
